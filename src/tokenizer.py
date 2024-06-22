@@ -70,55 +70,61 @@ def classify_lexeme(lexeme):
             return data
     return None
 
+def highlight_context(lexemes, index, context_range, target_lexeme):
+    """Generates a string with the target lexeme highlighted within its context."""
+    context_start = max(0, index - context_range - 1)
+    context_end = min(len(lexemes), index + context_range)
+    context = lexemes[context_start:context_end]
+    return ' '.join([f"\033[1;31m{word}\033[0m" if word == target_lexeme else word for word in context])
+
+def get_token_choice(num_tokens):
+    """Prompts the user for a token choice and validates the input."""
+    while True:
+        try:
+            token_choice = int(input('Ingrese el número del token: '))
+            if 1 <= token_choice <= num_tokens:
+                return token_choice
+            else:
+                print('Número fuera de rango. Intente de nuevo.')
+        except ValueError:
+            print('Entrada inválida. Por favor, ingrese un número.')
+
+def update_classify_dict(classify_dict, token_choice, lexeme, position_label):
+    """Updates the classification dictionary with the user's choice."""
+    selected_token = tokens[token_choice - 1]
+    print(f'Token: {selected_token} seleccionado')
+    existing_pattern = classify_dict[selected_token].patron.pattern.rstrip('\\b')
+    new_pattern = f'\\b({existing_pattern}|{lexeme})\\b'
+    classify_dict[selected_token].patron = re.compile(new_pattern, re.IGNORECASE)
+    classify_dict[selected_token].lexemas.append(lexeme)
+    classify_dict[selected_token].posiciones.append(position_label)
+
+def update_entry(entry, lexeme, position_label):
+    """Updates the entry with new lexeme and position if not already present."""
+    if lexeme not in entry.lexemas:
+        entry.lexemas.append(lexeme)
+        entry.posiciones.append(position_label)
 
 def process_file(classify_dict, file_path, entry_number):
+    """Processes the file to classify lexemes and handle unclassified lexemes interactively."""
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
     lexemes = get_lexemes(text)
 
     for i, lexeme in enumerate(lexemes, start=1):
         entry = classify_lexeme(lexeme)
-        position_label = f'TXT{entry_number}-{i}'  # Formato de etiqueta de posición
+        position_label = f'TXT{entry_number}-{i}'
         if not entry:
-            # Obtener contexto: palabras antes y después del lexema no clasificado
-            context_range = 2  # Define cuántas palabras antes y después incluir en el contexto
-            context_start = max(0, i - context_range - 1)
-            context_end = min(len(lexemes), i + context_range)
-            context = lexemes[context_start:context_end]
-            # Crear una versión del contexto con el lexema resaltado
-            highlighted_context = ' '.join(
-                [f"\033[1;31m{word}\033[0m" if word == lexeme else word for word in context]
-            )
-            print(f'No se pudo clasificar el lexema "{lexeme}" en el contexto "{highlighted_context}". Por favor, ingrese el número correspondiente al token:')
+            highlighted_context = highlight_context(lexemes, i, 2, lexeme)
+            print(f'No se pudo clasificar el lexema "{lexeme}" en el contexto "{highlighted_context}".')
+            print('Por favor, ingrese el número correspondiente al token:')
             for idx, token_name in enumerate(tokens, start=1):
                 print(f'{idx}. {token_name}')
-            while True:
-                try:
-                    token_choice = int(input('Ingrese el número del token: '))
-                    if 1 <= token_choice <= len(tokens):
-                        selected_token = tokens[token_choice - 1]
-                        print(f'Token: {selected_token} seleccionado')
-                        # Agregar el lexema al patrón existente
-                        existing_pattern = classify_dict[selected_token].patron.pattern
-                        # Asegurarse de que el patrón se maneje correctamente
-                        if existing_pattern.endswith('\\b'):
-                            existing_pattern = existing_pattern[:-2]  # Remove the boundary marker
-                        new_pattern = f'\\b({existing_pattern}|{lexeme})\\b'  # Recompilar el patrón con el nuevo lexema
-                        
-                        classify_dict[selected_token].patron = re.compile(new_pattern, re.IGNORECASE)  # Corrected line
-                        classify_dict[selected_token].lexemas.append(lexeme)
-                        classify_dict[selected_token].posiciones.append(position_label)  # Agregar la etiqueta de posición
-                        break
-                    else:
-                        print('Número fuera de rango. Intente de nuevo.')
-                except ValueError:
-                    print('Entrada inválida. Por favor, ingrese un número.')
+            token_choice = get_token_choice(len(tokens))
+            update_classify_dict(classify_dict, token_choice, lexeme, position_label)
         else:
-            # Correctly append the lexeme to the lexemas list and position label if it's not already present
-            if lexeme not in entry.lexemas:
-                entry.lexemas.append(lexeme)
-                entry.posiciones.append(position_label)  # Agregar la etiqueta de posición
-    
+            update_entry(entry, lexeme, position_label)
+
     return classify_dict
 
 def save_to_file(classify_dict, entry_number):
@@ -181,4 +187,4 @@ def process_and_save(file_path):
 
 load_classified_lexemes()
 # Ahora simplemente llama a process_and_save con la ruta del archivo
-process_and_save('.\data\input.txt')
+process_and_save('.\data\input2.txt')
