@@ -29,6 +29,7 @@ patterns = {
 }
 
 tokens_dict = {token: TokenData([], [], patterns[token]) for token in tokens}
+tokens_txt = {token: TokenData([], [], patterns[token]) for token in tokens}
 
 def load_classified_lexemes(filename='data/dictionary_entry.json'):  # Asegúrate de que la ruta predeterminada sea correcta
     if os.path.exists(filename):
@@ -93,8 +94,13 @@ def update_classify_dict(classify_dict, token_choice, lexeme, position_label):
     """Updates the classification dictionary with the user's choice."""
     selected_token = tokens[token_choice - 1]
     print(f'Token: {selected_token} seleccionado')
-    existing_pattern = classify_dict[selected_token].patron.pattern.rstrip('\\b')
-    new_pattern = f'\\b({existing_pattern}|{lexeme})\\b'
+    if selected_token != 'OTROS':
+        existing_pattern = classify_dict[selected_token].patron.pattern.rstrip(')\\b')
+        new_pattern = f'{existing_pattern}|{lexeme})\\b'
+    else:
+        existing_pattern = classify_dict[selected_token].patron.pattern.rstrip('\\b')
+        new_pattern = f'{existing_pattern}|{lexeme}\\b'        
+    
     classify_dict[selected_token].patron = re.compile(new_pattern, re.IGNORECASE)
     classify_dict[selected_token].lexemas.append(lexeme)
     classify_dict[selected_token].posiciones.append(position_label)
@@ -105,31 +111,60 @@ def update_entry(entry, lexeme, position_label):
         entry.lexemas.append(lexeme)
         entry.posiciones.append(position_label)
 
-def process_file(classify_dict, file_path, entry_number):
+def update_output(token_name, lexeme):
+    tokens_txt[token_name].lexemas.append(lexeme)
+
+def process_file(classify_txt, classify_dict, file_path, entry_number):
     """Processes the file to classify lexemes and handle unclassified lexemes interactively."""
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
     lexemes = get_lexemes(text)
+    total_lexemes = len(lexemes)
+    unclassified_lexemes = 0
+
+    initial_counts = {token: len(data.lexemas) for token, data in classify_dict.items()}
+    new_counts = {token: 0 for token in classify_dict}
 
     for i, lexeme in enumerate(lexemes, start=1):
         entry = classify_lexeme(lexeme)
         position_label = f'TXT{entry_number}-{i}'
         if not entry:
+            unclassified_lexemes += 1
             highlighted_context = highlight_context(lexemes, i, 2, lexeme)
             print(f'No se pudo clasificar el lexema "{lexeme}" en el contexto "{highlighted_context}".')
             print('Por favor, ingrese el número correspondiente al token:')
-            for idx, token_name in enumerate(tokens, start=1):
+            for idx, token_name in enumerate(tokens[:-1], start=1):
                 print(f'{idx}. {token_name}')
-            token_choice = get_token_choice(len(tokens))
+            token_choice = get_token_choice(len(tokens) - 1) # no quiero que se pueda seleccionar error
             update_classify_dict(classify_dict, token_choice, lexeme, position_label)
+            token_name = tokens[token_choice - 1]
         else:
             update_entry(entry, lexeme, position_label)
+            token_name = [token for token, data in tokens_dict.items() if data == entry][0]
+        update_output(token_name, lexeme)
 
-    return classify_dict
+    processed_lexemes = total_lexemes - unclassified_lexemes
+    processed_percentage = (processed_lexemes / total_lexemes) * 100
+    unclassified_percentage = (unclassified_lexemes / total_lexemes) * 100
 
-def save_to_file(classify_dict, entry_number):
+    print(f"\nProcesamiento completado:")
+    print(f"Total de lexemas: {total_lexemes}")
+    print(f"Lexemas procesados: {processed_lexemes} ({processed_percentage:.2f}%)")
+    print(f"Lexemas no procesados: {unclassified_lexemes} ({unclassified_percentage:.2f}%)\n")
+
+    for token, initial_count in initial_counts.items():
+        total_count = len(classify_dict[token].lexemas)
+        print(f"Token: {token}")
+        print(f"  Cantidad previa: {initial_count}")
+        print(f"  Cantidad nueva: {total_count - initial_count}")
+        print(f"  Cantidad total: {total_count}\n")
+
+    return classify_txt, classify_dict
+
+def save_to_file(classify_txt, classify_dict, entry_number):
     # Preparar los datos para la serialización
     serializable_dict = {}
+    serializable_txt = {}
     json_file_path = 'data/dictionary_entry.json'  # Modificar la ruta para usar la carpeta 'data'
 
     # Leer el contenido existente si el archivo ya existe
@@ -160,17 +195,23 @@ def save_to_file(classify_dict, entry_number):
                 'patron': entries.patron.pattern
             }
 
+    # Convertir cada patrón a su representación en cadena antes de guardar
+    for token, entries in classify_txt.items():
+        serializable_txt[token] = {
+            'lexemas': entries.lexemas,
+        }
     # Guardar el diccionario serializable en el archivo JSON
     with open(json_file_path, 'w', encoding='utf-8') as file:
         json.dump(serializable_dict, file, ensure_ascii=False, indent=4)
     
     # Guardar los lexemas en un archivo de texto
     with open(f'data/tokens_output_{entry_number}.txt', 'w', encoding='utf-8') as file:
-        for token, data in serializable_dict.items():
-            file.write(f'{token}: {" ".join(data["lexemas"])}\n')
+        for token, data in serializable_txt.items():
+            file.write(f'{token} -> {" | ".join(data["lexemas"])}\n')
 
 def get_next_entry_number():
     entry_number_file = 'data/entry_number.txt'  # Modificar la ruta para usar la carpeta 'data'
+    os.makedirs(os.path.dirname(entry_number_file), exist_ok=True)  # Ensure the directory exists
     if os.path.exists(entry_number_file):
         with open(entry_number_file, 'r', encoding='utf-8') as file:
             entry_number = int(file.read().strip()) + 1
@@ -182,9 +223,9 @@ def get_next_entry_number():
 
 def process_and_save(file_path):
     entry_number = get_next_entry_number()
-    classify_dict = process_file(tokens_dict, file_path, entry_number)
-    save_to_file(classify_dict, entry_number)
+    classify_txt, classify_dict = process_file(tokens_txt, tokens_dict, file_path, entry_number)
+    save_to_file(classify_txt, classify_dict, entry_number)
 
 load_classified_lexemes()
 # Ahora simplemente llama a process_and_save con la ruta del archivo
-process_and_save('.\data\input2.txt')
+process_and_save('data/input.txt')

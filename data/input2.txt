@@ -1,0 +1,5 @@
+El rápido zorro marrón salta sobre el perro perezoso. ¿Quién dijo eso?
+La temperatura en Nueva York es de 23.5 grados Celsius, mientras que en Madrid es de 28 grados.
+¡Error! El archivo no se encontró en la ruta especificada: C:/Archivos de Programa/Ejemplo.
+El precio del oro es de $1,234.56 por onza.
+¿Puedes creerlo? ¡Increíble pero cierto!
